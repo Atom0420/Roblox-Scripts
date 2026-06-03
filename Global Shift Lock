@@ -1,0 +1,216 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local TOGGLE_KEY = Enum.KeyCode.LeftShift
+
+local enabled = false
+local pinned = false
+local dragging = false
+local dragStart
+local startPos
+
+local CAMERA_OFFSET = Vector3.new(1.75, 0, 0)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "ForceShiftLockUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Name = "Main"
+frame.Size = UDim2.new(0, 165, 0, 46)
+frame.Position = UDim2.new(1, -180, 0, 20)
+frame.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = frame
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(255, 80, 80)
+stroke.Parent = frame
+
+local statusButton = Instance.new("TextButton")
+statusButton.Name = "StatusButton"
+statusButton.Size = UDim2.new(1, -45, 1, 0)
+statusButton.Position = UDim2.new(0, 0, 0, 0)
+statusButton.BackgroundTransparency = 1
+statusButton.Text = "Shift Lock: OFF"
+statusButton.Font = Enum.Font.GothamBold
+statusButton.TextSize = 16
+statusButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusButton.Parent = frame
+
+local pinButton = Instance.new("TextButton")
+pinButton.Name = "PinButton"
+pinButton.Size = UDim2.new(0, 40, 1, 0)
+pinButton.Position = UDim2.new(1, -40, 0, 0)
+pinButton.BackgroundTransparency = 1
+pinButton.Text = "📌"
+pinButton.Font = Enum.Font.GothamBold
+pinButton.TextSize = 20
+pinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+pinButton.Parent = frame
+
+local function getCharacter()
+	local character = player.Character
+	if not character then
+		return nil, nil, nil
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+
+	return character, humanoid, root
+end
+
+local function updateUI()
+	if enabled then
+		frame.BackgroundColor3 = Color3.fromRGB(20, 120, 45)
+		stroke.Color = Color3.fromRGB(80, 255, 120)
+		statusButton.Text = "Shift Lock: ON"
+	else
+		frame.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
+		stroke.Color = Color3.fromRGB(255, 80, 80)
+		statusButton.Text = "Shift Lock: OFF"
+	end
+
+	if pinned then
+		pinButton.Text = "📌"
+		pinButton.TextColor3 = Color3.fromRGB(255, 230, 80)
+	else
+		pinButton.Text = "📌"
+		pinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	end
+end
+
+local function applyShiftLock(state)
+	enabled = state
+
+	local character, humanoid, root = getCharacter()
+
+	if humanoid then
+		humanoid.AutoRotate = not state
+		humanoid.CameraOffset = state and CAMERA_OFFSET or Vector3.zero
+	end
+
+	if state then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UserInputService.MouseIconEnabled = false
+	else
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		UserInputService.MouseIconEnabled = true
+	end
+
+	updateUI()
+end
+
+local function toggleShiftLock()
+	applyShiftLock(not enabled)
+end
+
+statusButton.MouseButton1Click:Connect(function()
+	toggleShiftLock()
+end)
+
+pinButton.MouseButton1Click:Connect(function()
+	pinned = not pinned
+	updateUI()
+end)
+
+frame.InputBegan:Connect(function(input)
+	if pinned then
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not dragging then
+		return
+	end
+
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+
+	local delta = input.Position - dragStart
+
+	frame.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then
+		return
+	end
+
+	if input.KeyCode == TOGGLE_KEY then
+		toggleShiftLock()
+	end
+end)
+
+RunService.RenderStepped:Connect(function()
+	if not enabled then
+		return
+	end
+
+	local character, humanoid, root = getCharacter()
+
+	if not character or not humanoid or not root then
+		return
+	end
+
+	camera = workspace.CurrentCamera
+
+	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+	UserInputService.MouseIconEnabled = false
+
+	humanoid.AutoRotate = false
+	humanoid.CameraOffset = CAMERA_OFFSET
+
+	local lookVector = camera.CFrame.LookVector
+	local flatLook = Vector3.new(lookVector.X, 0, lookVector.Z)
+
+	if flatLook.Magnitude > 0.001 then
+		root.CFrame = CFrame.new(root.Position, root.Position + flatLook.Unit)
+	end
+end)
+
+player.CharacterAdded:Connect(function(character)
+	task.wait(0.75)
+
+	if enabled then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.AutoRotate = false
+			humanoid.CameraOffset = CAMERA_OFFSET
+		end
+	end
+end)
+
+updateUI()
